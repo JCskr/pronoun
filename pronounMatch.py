@@ -26,6 +26,7 @@ def hannlp_parse(string):
     :param string:
     :return:
     '''
+
     result = HanLP.parseDependency(string)
     result = [ele.split("\t") for ele in str(result).strip().split("\n")]
 
@@ -47,6 +48,8 @@ def hannlp_parse(string):
 
     first_path = ''
     subject_word = ''
+    subject_cnt = 0
+    last_subject_loc = 0
     head_word = ''
     another_pron = ''
     another_pron_relate = ''
@@ -62,7 +65,9 @@ def hannlp_parse(string):
             first_path += str(element[1]) + direction
 
             if str(element[7]) == '主谓关系':
-                subject_word = str(element[1])
+                subject_word += str(element[1])
+                subject_cnt += 1
+                last_subject_loc = int(element[0]) - 1
 
             if str(element[7]) == '核心关系':
                 head_word = str(element[1])
@@ -75,6 +80,10 @@ def hannlp_parse(string):
         # word -
         if str(element[7]) == '动宾关系' and str(element[3]) not in ['r'] and head_loc == int(element[6]):
             action_word = str(element[1])
+
+    # 一个句子多个主谓关系，只保留最后一个主谓关系
+    if subject_cnt > 1:
+        return hannlp_parse(''.join(fenci[last_subject_loc:]))
 
     represent = {'f1':first_path}
     core_word = {'subject_word':subject_word, 'head_word':head_word,
@@ -119,6 +128,7 @@ class PronounMatch(object):
 
     def __init__(self, topic_model):
         self.topic_model = topic_model
+        self.all_pronouns = fir_sec_pronouns + third_pronouns
 
     def match_score(self, sent1, sent2):
         '''
@@ -145,39 +155,51 @@ class PronounMatch(object):
 
                 action_word1 = pronoun_sent1.get('core_word').get('action_word')
                 action_word2 = pronoun_sent2.get('core_word').get('action_word')
+
+                main_subject = subject_word1
                 if rule1 == rule2:
                     matchscore += 200
 
                 if subject_word1 != subject_word2:
-                    if fuzz.ratio(subject_word1, subject_word2) > 50:
+                    if subject_word1 in self.topic_model and subject_word2 in self.topic_model and self.topic_model.similarity(subject_word1, subject_word2) > 0.6:
                         matchscore += 100
                     else:
-                        return (sent2, 0)
+                        if fuzz.ratio(subject_word1, subject_word2) > 50:
+                            matchscore += 100
+                        else:
+                            return (sent2, 0)
 
                 if head_word1 != head_word2:
-                    if head_word1 in self.topic_model and head_word2 in self.topic_model:
-                        if self.topic_model.similarity(head_word1, head_word2) > 0.6:
-                            matchscore += 50
-                        else:
-                            return (sent2, 0)
+                    if head_word1 in self.topic_model and head_word2 in self.topic_model and self.topic_model.similarity(head_word1, head_word2) > 0.6:
+                        matchscore += 100
                     else:
                         if fuzz.ratio(head_word1, head_word2) > 60:
-                            matchscore += 50
+                            matchscore += 100
                         else:
                             return (sent2, 0)
 
-                if another_pron1 == another_pron2:
-                    matchscore += 50
-                    if another_pron_relate1 == another_pron_relate2:
-                        matchscore += 50
+                if matchscore >= 200:
+                    if another_pron1 and another_pron2:
 
-                if action_word1 == action_word2:
-                    matchscore +=100
+                        if another_pron1 == another_pron2:
+                            matchscore += 50
+                            if another_pron_relate1 == another_pron_relate2:
+                                matchscore += 50
+                        else:
+                            # 如果主语不是代词，而且其他代词没有匹配上，则认为两者不匹配。 - 即在主语不是代词的情况下，其他代词非常重要。
+                            if not main_subject or main_subject not in self.all_pronouns:
+                                return (sent2, 0)
+
+                    if action_word1 and action_word2:
+                        if action_word1 == action_word2:
+                            matchscore +=100
+                        else:
+                            if fuzz.ratio(action_word1, action_word2) > 0:
+                                matchscore += 50
+                            else:
+                                return (sent2, 0)
                 else:
-                    if fuzz.ratio(action_word1, action_word2) > 0:
-                        matchscore += 50
-                    else:
-                        return (sent2, 0)
+                    return (sent2, 0)
 
         return (sent2, matchscore)
 
