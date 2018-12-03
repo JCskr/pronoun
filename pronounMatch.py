@@ -18,9 +18,10 @@ third_person_collection = ["他们",
 
 fir_sec_pronouns = first_person + first_person_collection + second_person + second_person_collection
 third_pronouns = third_person + third_person_collection
+all_pronouns = fir_sec_pronouns + third_pronouns
 
 
-def hannlp_parse(string):
+def hannlp_parse(string, pron_cnt=0):
     '''
     hannlp依存句法分析
     :param string:
@@ -54,6 +55,7 @@ def hannlp_parse(string):
     another_pron = ''
     another_pron_relate = ''
     action_word = ''
+    prons = []
     for element in result:
         if int(element[0]) < int(element[6]):
             direction = '+'
@@ -61,19 +63,21 @@ def hannlp_parse(string):
             direction = '-'
 
         # path - sv
-        if str(element[7]) in ['主谓关系','核心关系']:
+        if str(element[7]) in ['主谓关系', '核心关系']:
             first_path += str(element[1]) + direction
 
             if str(element[7]) == '主谓关系':
                 subject_word += str(element[1])
-                subject_cnt += 1
                 last_subject_loc = int(element[0]) - 1
 
             if str(element[7]) == '核心关系':
                 head_word = str(element[1])
 
+            if str(element[1]) in all_pronouns and str(element[7]) == '主谓关系':
+                subject_cnt += 1
+
         # word -
-        if str(element[1]) in fir_sec_pronouns and str(element[7]) not in ['主谓关系']:
+        if str(element[1]) in all_pronouns and str(element[7]) == '主谓关系':
             another_pron += str(element[1])
             another_pron_relate += str(element[7])
 
@@ -81,14 +85,19 @@ def hannlp_parse(string):
         if str(element[7]) == '动宾关系' and str(element[3]) not in ['r'] and head_loc == int(element[6]):
             action_word = str(element[1])
 
+        # cnt -
+        if str(element[1]) in all_pronouns:
+            pron_cnt += 1
+            prons.append(str(element[1]))
+
     # 一个句子多个主谓关系，只保留最后一个主谓关系
     if subject_cnt > 1:
-        return hannlp_parse(''.join(fenci[last_subject_loc:]))
+        return hannlp_parse(''.join(fenci[last_subject_loc:]), pron_cnt=pron_cnt)
 
-    represent = {'f1':first_path}
-    core_word = {'subject_word':subject_word, 'head_word':head_word,
-                 'another_pron':another_pron, 'another_pron_relate':another_pron_relate,
-                 'action_word':action_word}
+    represent = {'f1': first_path}
+    core_word = {'subject_word': subject_word, 'head_word': head_word,
+                 'another_pron': another_pron, 'another_pron_relate': another_pron_relate,
+                 'action_word': action_word, 'pron_cnt': pron_cnt}
     return fenci, represent, core_word
 
 
@@ -105,10 +114,12 @@ class PronounExtract(object):
         :return:
         '''
         fenci, represent, core_word = hannlp_parse(orig_sent)
+
         # 第三人称
         third_ = set.intersection(set(fenci), set(self.third_pronouns))
         if len(third_):
-            return {'third_person': fenci[fenci.index(list(third_)[0])]}
+            return {'third_person': fenci[fenci.index(list(third_)[0])],
+                    'core_word': core_word}
 
         # 第一人称和第二人称
         fir_sec = set.intersection(set(fenci), set(self.fir_sec_pronouns))
@@ -117,7 +128,7 @@ class PronounExtract(object):
                     'core_word': core_word}
 
         no_pronoun = set.intersection(set(fenci), set(self.fir_sec_pronouns + self.third_pronouns))
-        if no_pronoun:
+        if not no_pronoun:
             return
 
 
@@ -161,7 +172,8 @@ class PronounMatch(object):
                     matchscore += 200
 
                 if subject_word1 != subject_word2:
-                    if subject_word1 in self.topic_model and subject_word2 in self.topic_model and self.topic_model.similarity(subject_word1, subject_word2) > 0.6:
+                    if subject_word1 in self.topic_model and subject_word2 in self.topic_model and self.topic_model.similarity(
+                            subject_word1, subject_word2) > 0.6:
                         matchscore += 100
                     else:
                         if fuzz.ratio(subject_word1, subject_word2) > 50:
@@ -170,7 +182,8 @@ class PronounMatch(object):
                             return (sent2, 0)
 
                 if head_word1 != head_word2:
-                    if head_word1 in self.topic_model and head_word2 in self.topic_model and self.topic_model.similarity(head_word1, head_word2) > 0.6:
+                    if head_word1 in self.topic_model and head_word2 in self.topic_model and self.topic_model.similarity(
+                            head_word1, head_word2) > 0.6:
                         matchscore += 100
                     else:
                         if fuzz.ratio(head_word1, head_word2) > 60:
@@ -192,7 +205,7 @@ class PronounMatch(object):
 
                     if action_word1 and action_word2:
                         if action_word1 == action_word2:
-                            matchscore +=100
+                            matchscore += 100
                         else:
                             if fuzz.ratio(action_word1, action_word2) > 0:
                                 matchscore += 50

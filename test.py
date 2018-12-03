@@ -124,7 +124,7 @@ sentence = '你没有弟弟吗？'
 sentence = '你老婆呢'
 sentence = '你知道我是谁吗'
 
-
+sentence = '你是男还是女'
 
 from pyhanlp import HanLP
 result = HanLP.parseDependency(sentence)
