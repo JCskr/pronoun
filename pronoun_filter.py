@@ -122,13 +122,13 @@ class PronounMatch(object):
                     if prons1 != prons2:
                         matchscore = 0
                     else:
-                        value_ = 0
+                        value_ = len(words1)
                         for i,j in zip(words1,words2):
                             if i in self.topic_model and j in self.topic_model and self.topic_model.similarity(
                             i, j) < 0.4:
-                                value_ += 1
+                                value_ -= 1
                             elif fuzz.ratio(i, j) < 50:
-                                value_ += 1
+                                value_ -= 1
                         if value_ < len(words1):
                             matchscore = 0
 
